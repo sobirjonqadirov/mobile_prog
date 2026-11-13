@@ -1,5 +1,12 @@
+import 'package:flutter/foundation.dart';
+
 class Product {
-  const Product({required this.id, required this.name, required this.price});
+  const Product({
+    required this.id,
+    required this.name,
+    required this.price,
+  });
+
   final String id;
   final String name;
   final double price;
@@ -12,46 +19,69 @@ const catalog = [
 ];
 
 class CartLine {
-  const CartLine({required this.product, required this.qty});
+  const CartLine({
+    required this.product,
+    required this.qty,
+  });
+
   final Product product;
   final int qty;
+
   double get subtotal => product.price * qty;
-  CartLine copyWith({int? qty}) => CartLine(product: product, qty: qty ?? this.qty);
+
+  CartLine copyWith({int? qty}) {
+    return CartLine(
+      product: product,
+      qty: qty ?? this.qty,
+    );
+  }
 }
 
-/// Pure, style-independent cart logic. Every state holder calls these.
 extension CartLines on List<CartLine> {
-  List<CartLine> withProduct(Product p) {
-    final i = indexWhere((l) => l.product.id == p.id);
+  List<CartLine> withProduct(Product product) {
+    final index = indexWhere(
+      (line) => line.product.id == product.id,
+    );
 
-    if (i == -1) {
-      return [...this, CartLine(product: p, qty: 1)];
+    if (index == -1) {
+      return [
+        ...this,
+        CartLine(product: product, qty: 1),
+      ];
     }
 
     return [
-      for (final l in this)
-        l.product.id == p.id
-            ? l.copyWith(qty: l.qty + 1)
-            : l,
+      for (final line in this)
+        line.product.id == product.id
+            ? line.copyWith(qty: line.qty + 1)
+            : line,
     ];
   }
 
-  List<CartLine> without(String productId) =>
-      [for (final l in this) if (l.product.id != productId) l];
+  List<CartLine> without(String productId) {
+    return [
+      for (final line in this)
+        if (line.product.id != productId) line,
+    ];
+  }
 
   List<CartLine> changeQty(String id, int delta) {
     return [
-      for (final l in this)
-        if (l.product.id != id)
-          l
-        else if (l.qty + delta > 0)
-          l.copyWith(qty: l.qty + delta),
+      for (final line in this)
+        if (line.product.id != id)
+          line
+        else if (line.qty + delta > 0)
+          line.copyWith(qty: line.qty + delta),
     ];
   }
 
-  double get subtotal => fold(0, (s, l) => s + l.subtotal);
+  double get subtotal {
+    return fold(0, (sum, line) => sum + line.subtotal);
+  }
 
-  int get itemCount => fold(0, (s, l) => s + l.qty);
+  int get itemCount {
+    return fold(0, (sum, line) => sum + line.qty);
+  }
 }
 
 enum CheckoutStatus {
@@ -74,7 +104,6 @@ class CartState {
   final List<CartLine> lines;
   final String? coupon;
   final String? couponError;
-
   final CheckoutStatus checkoutStatus;
   final String? orderId;
   final String? checkoutError;
@@ -94,12 +123,12 @@ class CartState {
     return CartState(
       lines: lines ?? this.lines,
       coupon: clearCoupon ? null : coupon ?? this.coupon,
-      couponError: clearCouponError ? null : couponError ?? this.couponError,
+      couponError:
+          clearCouponError ? null : couponError ?? this.couponError,
       checkoutStatus: checkoutStatus ?? this.checkoutStatus,
       orderId: clearOrderId ? null : orderId ?? this.orderId,
-      checkoutError: clearCheckoutError
-          ? null
-          : checkoutError ?? this.checkoutError,
+      checkoutError:
+          clearCheckoutError ? null : checkoutError ?? this.checkoutError,
     );
   }
 
@@ -110,4 +139,26 @@ class CartState {
   double get discount => coupon == 'SAVE10' ? subtotal * 0.10 : 0;
 
   double get total => subtotal - discount;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is CartState &&
+            listEquals(lines, other.lines) &&
+            coupon == other.coupon &&
+            couponError == other.couponError &&
+            checkoutStatus == other.checkoutStatus &&
+            orderId == other.orderId &&
+            checkoutError == other.checkoutError;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        Object.hashAll(lines),
+        coupon,
+        couponError,
+        checkoutStatus,
+        orderId,
+        checkoutError,
+      );
 }
