@@ -84,8 +84,8 @@ class ModelScreen extends StatelessWidget {
             leading: Icon(Icons.palette_outlined),
             title: Text('Figma design reference'),
             subtitle: Text(
-              'Add the selected Figma Community '
-              'design name, author and link here.',
+              'Designed by me '
+              '1 hour before deadline',
             ),
           ),
         ),

@@ -72,11 +72,38 @@ class HistoryScreen extends StatelessWidget {
               '${(top.confidence * 100).toStringAsFixed(1)}% '
               '• ${record.source}',
             ),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _sourceIcon(record.source),
+                  color: theme.colorScheme.primary,
+                  size: 21,
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.chevron_right),
+              ],
+            ),
             onTap: () => onOpenRecord(record),
           ),
         );
       },
     );
+  }
+}
+
+
+IconData _sourceIcon(String source) {
+  switch (source) {
+    case 'Camera':
+      return Icons.camera_alt_outlined;
+    case 'Gallery':
+      return Icons.photo_library_outlined;
+    case 'Download':
+      return Icons.cloud_download_outlined;
+    case 'Sample':
+      return Icons.science_outlined;
+    default:
+      return Icons.image_outlined;
   }
 }
