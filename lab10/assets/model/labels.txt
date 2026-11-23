@@ -1,0 +1,6 @@
+0 Face
+1 Pen
+2 Empty hand
+3 Mouse
+4 Notebook
+5 Keyboard
