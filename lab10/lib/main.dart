@@ -1,41 +1,52 @@
 
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
+import 'models/classification_record.dart';
+import 'screens/history_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/model_screen.dart';
+import 'screens/result_screen.dart';
+import 'screens/welcome_screen.dart';
 import 'services/classifier.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+  runApp(const ObjectLensApp());
 }
 
-class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+class ObjectLensApp extends StatefulWidget {
+  const ObjectLensApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<ObjectLensApp> createState() => _ObjectLensAppState();
 }
 
-class _MyAppState extends State<MyApp> {
-  Classifier? _classifier;
-  bool _loading = true;
-  String? _error;
+class _ObjectLensAppState extends State<ObjectLensApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
-  List<Prediction> _predictions = [];
+  Classifier? _classifier;
+
+  bool _loading = true;
+  bool _entered = false;
+  bool _previewBusy = false;
+
+  String? _error;
+  int _selectedIndex = 0;
+
+  final List<ClassificationRecord> _history = [];
 
   @override
   void initState() {
     super.initState();
-    _initialize();
+    _loadClassifier();
   }
 
-  Future<void> _initialize() async {
-    Classifier? classifier;
-
+  Future<void> _loadClassifier() async {
     try {
-      classifier = await Classifier.load();
+      final classifier = await Classifier.load();
 
       if (!mounted) {
         classifier.close();
@@ -46,32 +57,31 @@ class _MyAppState extends State<MyApp> {
         _classifier = classifier;
         _loading = false;
       });
-
-      await _classifySample();
     } catch (e) {
-      if (classifier != null &&
-          !identical(classifier, _classifier)) {
-        classifier.close();
-      }
-
       if (!mounted) return;
 
       setState(() {
         _loading = false;
-        _error = 'Could not load the model.\n'
-            'Expected: assets/model/model_unquant.tflite '
-            'and assets/model/labels.txt\n\n$e';
+        _error = 'Unable to load the classifier.\n'
+            'Check assets/model/model_unquant.tflite '
+            'and assets/model/labels.txt.\n\n$e';
       });
     }
   }
 
-  Future<void> _classifySample() async {
-    final classifier = _classifier;
-    if (classifier == null) return;
+  void _showMessage(String message) {
+    _messengerKey.currentState
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+  }
+
+  Future<void> _previewSample() async {
+    if (_previewBusy || _classifier == null) return;
 
     setState(() {
-      _loading = true;
-      _error = null;
+      _previewBusy = true;
     });
 
     try {
@@ -84,57 +94,51 @@ class _MyAppState extends State<MyApp> {
         data.lengthInBytes,
       );
 
-      final predictions = classifier.classify(bytes);
+      final predictions = _classifier!.classify(bytes);
 
-      for (final prediction in predictions) {
-        debugPrint(
-          '${prediction.label}: '
-          '${(prediction.confidence * 100).toStringAsFixed(1)}%',
-        );
+      if (predictions.isEmpty) {
+        throw StateError('The classifier returned no results.');
       }
 
-      final total = predictions.fold<double>(
-        0.0,
-        (sum, prediction) => sum + prediction.confidence,
+      final record = ClassificationRecord(
+        imageBytes: bytes,
+        predictions: predictions,
+        source: 'Sample',
+        createdAt: DateTime.now(),
       );
 
-      debugPrint('Total confidence: $total');
-
       if (!mounted) return;
 
       setState(() {
-        _predictions = predictions;
+        _history.insert(0, record);
       });
+
+      _openResult(record);
     } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _error = 'Could not classify sample.jpg:\n$e';
-      });
+      if (mounted) {
+        _showMessage('Could not classify sample: $e');
+      }
     } finally {
       if (mounted) {
         setState(() {
-          _loading = false;
+          _previewBusy = false;
         });
       }
     }
   }
 
-  void _testInvalidImage() {
-    final classifier = _classifier;
-    if (classifier == null) return;
+  void _openResult(ClassificationRecord record) {
+    _navigatorKey.currentState?.push(
+      MaterialPageRoute<void>(
+        builder: (_) => ResultScreen(record: record),
+      ),
+    );
+  }
 
-    try {
-      final invalidBytes = Uint8List.fromList(
-        'This is not an image'.codeUnits,
-      );
-
-      classifier.classify(invalidBytes);
-    } catch (e) {
-      setState(() {
-        _error = 'Invalid image: $e';
-      });
-    }
+  void _showComingSoon(String feature) {
+    _showMessage(
+      '$feature will be connected in Part 5.',
+    );
   }
 
   @override
@@ -146,88 +150,82 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'ObjectLens',
       debugShowCheckedModeBanner: false,
-      title: 'Teachable Machine Classifier',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.teal,
-        ),
-        useMaterial3: true,
+      theme: AppTheme.light,
+      navigatorKey: _navigatorKey,
+      scaffoldMessengerKey: _messengerKey,
+      home: !_entered
+          ? WelcomeScreen(
+              labels: _classifier?.labels ?? [],
+              loading: _loading,
+              error: _error,
+              onStart: () {
+                setState(() {
+                  _entered = true;
+                });
+              },
+            )
+          : _buildMainShell(),
+    );
+  }
+
+  Widget _buildMainShell() {
+    final classifier = _classifier!;
+
+    final pages = [
+      HomeScreen(
+        onPreview: _previewSample,
+        onCamera: () => _showComingSoon('Camera'),
+        onGallery: () => _showComingSoon('Gallery'),
+        onDownload: () => _showComingSoon('Download'),
+        latest: _history.isEmpty ? null : _history.first,
+        onOpenLatest: () {
+          if (_history.isNotEmpty) {
+            _openResult(_history.first);
+          }
+        },
       ),
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Image Classifier'),
+      HistoryScreen(
+        records: _history,
+        onOpenRecord: _openResult,
+      ),
+      ModelScreen(classifier: classifier),
+    ];
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('ObjectLens'),
+      ),
+      body: SafeArea(
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: pages,
         ),
-        body: Center(
-          child: _loading
-              ? const CircularProgressIndicator()
-              : _error != null
-                  ? Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            size: 48,
-                            color: Colors.red,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _error!,
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 20),
-                          if (_classifier != null)
-                            ElevatedButton(
-                              onPressed: _classifySample,
-                              child: const Text('Try Again'),
-                            ),
-                        ],
-                      ),
-                    )
-                  : ListView(
-                      padding: const EdgeInsets.all(20),
-                      children: [
-                        const Text(
-                          'Classification Results',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        for (final prediction in _predictions)
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              bottom: 16,
-                            ),
-                            child: Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '${prediction.label}: '
-                                  '${(prediction.confidence * 100).toStringAsFixed(1)}%',
-                                ),
-                                const SizedBox(height: 6),
-                                LinearProgressIndicator(
-                                  value: prediction.confidence
-                                      .clamp(0.0, 1.0),
-                                ),
-                              ],
-                            ),
-                          ),
-                        const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: _testInvalidImage,
-                          child: const Text(
-                            'Test Invalid Image',
-                          ),
-                        ),
-                      ],
-                    ),
-        ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (index) {
+          setState(() {
+            _selectedIndex = index;
+          });
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history),
+            label: 'History',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.memory_outlined),
+            selectedIcon: Icon(Icons.memory),
+            label: 'Model',
+          ),
+        ],
       ),
     );
   }
